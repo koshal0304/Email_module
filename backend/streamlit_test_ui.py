@@ -747,6 +747,24 @@ def render_testing_panel():
             if result.get("threads"):
                 st.session_state.threads_list = result["threads"]
         
+        # Display thread list if no thread is selected
+        if not st.session_state.get("selected_thread_id") and st.session_state.get("threads_list"):
+            st.markdown("#### Found Threads")
+            for thread in st.session_state.threads_list:
+                with st.container():
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        if st.button(
+                            f"📁 **{thread.get('subject', 'No Subject')}**\n{thread.get('message_count', 0)} messages",
+                            key=f"thread_{thread.get('id')}",
+                            use_container_width=True
+                        ):
+                            st.session_state.selected_thread_id = thread.get('id')
+                            st.rerun()
+                    with col2:
+                        st.caption(f"Status: {thread.get('status')}\nType: {thread.get('email_type')}")
+                    st.markdown("---")
+        
         # Check if we are viewing a specific thread
         if st.session_state.get("selected_thread_id"):
             thread_id = st.session_state.selected_thread_id

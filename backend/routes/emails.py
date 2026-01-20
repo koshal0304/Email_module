@@ -108,23 +108,32 @@ async def sync_emails(
         # Create Graph service
         graph = GraphService(access_token)
         
-        # Fetch emails
-        result = graph.list_messages(folder=folder, limit=limit)
+        folders_to_sync = ["inbox", "sentitems"]
+        if folder and folder not in folders_to_sync:
+             # If user specifically requested something else, respect it
+             folders_to_sync = [folder]
         
-        # Sync each email
-        service = EmailService(db, graph)
         synced = []
         
-        for email_data in result.get("value", []):
-            try:
-                email = service.sync_email_from_graph(email_data, current_user)
-                synced.append(email.id)
-            except Exception as e:
-                # Log error but continue with other emails
-                print(f"Error syncing email: {e}")
+        for folder_name in folders_to_sync:
+            # Fetch emails
+            result = graph.list_messages(folder=folder_name, limit=limit)
+             
+            # Sync each email
+            service = EmailService(db, graph)
+             
+            for email_data in result.get("value", []):
+                try:
+                    email = service.sync_email_from_graph(email_data, current_user)
+                    synced.append(email.id)
+                except Exception as e:
+                    # Log error but continue with other emails
+                    import traceback
+                    traceback.print_exc()
+                    print(f"Error syncing email in {folder_name}: {e}")
         
         return {
-            "message": f"Synced {len(synced)} emails",
+            "message": f"Synced {len(synced)} emails from {', '.join(folders_to_sync)}",
             "synced_count": len(synced),
             "synced_ids": synced
         }

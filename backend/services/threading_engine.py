@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from sqlalchemy.orm import Session
 
 from models.email import Email, EmailThread
+from services.classification_service import EmailClassifier
 
 
 @dataclass
@@ -68,42 +69,48 @@ class EmailThreadingEngine:
         """
         self.db = db
     
-    def thread_email(self, email_data: Dict[str, Any]) -> ThreadingResult:
+    def thread_email(self, email_data: Dict[str, Any], user_email: Optional[str] = None) -> ThreadingResult:
         """
         Main orchestrator: tries all threading methods in priority order.
         
         Args:
             email_data: Email data from Microsoft Graph API
+            user_email: Current user's email address (to identify direction)
             
         Returns:
             ThreadingResult with thread_id and confidence
         """
-        # Layer 1: Microsoft Conversation ID
+        # Layer 1: User Preference - Group by (Participant + Tag)
+        result = self._check_participant_tag_thread(email_data, user_email)
+        if result:
+            return result
+        
+        # Layer 2: Microsoft Conversation ID (Standard)
         result = self._check_conversation_id(email_data)
         if result:
             return result
         
-        # Layer 2: Custom X-Tax-Email-ID header
+        # Layer 3: Custom X-Tax-Email-ID header
         result = self._check_custom_header(email_data)
         if result:
             return result
         
-        # Layer 3: RFC 5322 In-Reply-To header
+        # Layer 4: RFC 5322 In-Reply-To header
         result = self._check_in_reply_to(email_data)
         if result:
             return result
         
-        # Layer 4: RFC 5322 References header
+        # Layer 5: RFC 5322 References header
         result = self._check_references(email_data)
         if result:
             return result
         
-        # Layer 5: Subject line fuzzy matching
+        # Layer 6: Subject line fuzzy matching
         result = self._check_subject_matching(email_data)
         if result:
             return result
         
-        # Layer 6: Time + recipient matching
+        # Layer 7: Time + recipient matching
         result = self._check_time_recipient_matching(email_data)
         if result:
             return result
@@ -115,6 +122,53 @@ class EmailThreadingEngine:
             method="new_thread",
             is_new=True
         )
+    
+    def _check_participant_tag_thread(self, email_data: Dict, user_email: Optional[str]) -> Optional[ThreadingResult]:
+        """
+        Layer 1: Check for existing thread with same Participant and Email Type.
+        
+        Priority: High (1.0)
+        """
+        if not user_email:
+            return None
+            
+        # 1. Determine Participant
+        from_address = self._extract_from_address(email_data)
+        participant = None
+        
+        if from_address == user_email.lower():
+            # Outgoing: participant is first recipient
+            to_recipients = self._extract_recipients(email_data, "toRecipients")
+            if to_recipients:
+                participant = to_recipients[0]
+        else:
+            # Incoming: participant is sender
+            participant = from_address
+            
+        if not participant:
+            return None
+            
+        # 2. Determine Email Type
+        subject = email_data.get("subject", "")
+        body_preview = email_data.get("bodyPreview", "")
+        email_type = EmailClassifier.classify(subject, body_preview)
+        
+        # 3. Query DB for matching thread
+        # Find ANY email that involves this participant AND belongs to a thread with this type
+        existing_email = self.db.query(Email).join(EmailThread).filter(
+            EmailThread.email_type == email_type.value,
+            (Email.from_address == participant) | (Email.to_recipients.contains([participant]))
+        ).order_by(Email.received_date_time.desc()).first()
+        
+        if existing_email and existing_email.thread_id:
+            return ThreadingResult(
+                thread_id=existing_email.thread_id,
+                confidence=1.0,
+                method="participant_tag_match",
+                parent_id=existing_email.id
+            )
+            
+        return None
     
     def _check_conversation_id(self, email_data: Dict) -> Optional[ThreadingResult]:
         """
