@@ -100,7 +100,7 @@ class EmailThread(Base):
         self.last_activity_at = datetime.utcnow()
         self.message_count = len(self.emails)
     
-    def to_dict(self, include_emails: bool = False) -> dict:
+    def to_dict(self, include_emails: bool = False, include_preview: bool = False) -> dict:
         """Convert to dictionary."""
         result = {
             "id": self.id,
@@ -114,6 +114,13 @@ class EmailThread(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_activity_at": self.last_activity_at.isoformat() if self.last_activity_at else None,
         }
+        
+        if include_preview and self.emails:
+            # Get the latest email for preview
+            latest_email = self.emails[0]  # Already ordered by received_date_time desc
+            result["latest_sender_name"] = latest_email.from_name or latest_email.from_address
+            result["latest_sender_email"] = latest_email.from_address
+            result["preview"] = latest_email.body_preview or ""
         
         if include_emails:
             result["emails"] = [e.to_dict() for e in self.emails]
@@ -229,8 +236,9 @@ class Email(Base):
         if include_body:
             result["body"] = self.body
             result["body_html"] = self.body_html
-        else:
-            result["body_preview"] = self.body_preview
+        
+        # Always include preview
+        result["body_preview"] = self.body_preview
         
         return result
     

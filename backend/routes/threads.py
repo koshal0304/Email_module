@@ -60,7 +60,7 @@ async def list_threads(
         "total": total,
         "limit": limit,
         "offset": offset,
-        "threads": [t.to_dict() for t in threads]
+        "threads": [t.to_dict(include_preview=True) for t in threads]
     }
 
 

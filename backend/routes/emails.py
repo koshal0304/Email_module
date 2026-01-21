@@ -22,6 +22,13 @@ router = APIRouter(prefix="/emails", tags=["Emails"])
 
 
 # Request/Response Models
+class AttachmentRequest(BaseModel):
+    filename: str
+    content_bytes: str  # Base64 encoded
+    content_type: str
+    is_inline: bool = False
+
+
 class SendEmailRequest(BaseModel):
     to_recipients: List[EmailStr]
     subject: str
@@ -29,6 +36,7 @@ class SendEmailRequest(BaseModel):
     body_type: str = "HTML"
     cc_recipients: Optional[List[EmailStr]] = None
     bcc_recipients: Optional[List[EmailStr]] = None
+    attachments: Optional[List[AttachmentRequest]] = None
     thread_id: Optional[str] = None
     client_id: Optional[str] = None
     signature_id: Optional[str] = None
@@ -200,7 +208,8 @@ async def send_email(
             bcc_recipients=payload.bcc_recipients,
             thread_id=payload.thread_id,
             client_id=payload.client_id,
-            signature_html=signature_html
+            signature_html=signature_html,
+            attachments=[a.dict() for a in payload.attachments] if payload.attachments else None
         )
         
         return {

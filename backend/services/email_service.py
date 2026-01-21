@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from models.email import Email, EmailThread, EmailAttachment, EmailDirection, EmailStatus, ThreadStatus
 from models.user import User
@@ -50,12 +51,33 @@ class EmailService:
         """
         graph_message_id = email_data.get("id")
         
-        # Check if email already exists
-        existing = self.db.query(Email).filter(
-            Email.graph_message_id == graph_message_id
-        ).first()
+        # Extract tax_email_id from headers
+        tax_email_id = None
+        headers = email_data.get("internetMessageHeaders", [])
+        for header in headers:
+            if header.get("name", "").lower() == "x-tax-email-id":
+                tax_email_id = header.get("value")
+                break
+        
+        # Check if email already exists (by Graph ID OR Tax ID)
+        query = self.db.query(Email)
+        if tax_email_id:
+            query = query.filter(
+                or_(
+                    Email.graph_message_id == graph_message_id,
+                    Email.tax_email_id == tax_email_id
+                )
+            )
+        else:
+            query = query.filter(Email.graph_message_id == graph_message_id)
+            
+        existing = query.first()
         
         if existing:
+            # If matched by Tax ID but Graph ID is different/missing, update Graph ID
+            if existing.graph_message_id != graph_message_id:
+                existing.graph_message_id = graph_message_id
+                
             # Update existing email
             self._update_email_from_graph(existing, email_data)
             self.db.commit()
@@ -242,7 +264,8 @@ class EmailService:
         bcc_recipients: Optional[List[str]] = None,
         thread_id: Optional[str] = None,
         client_id: Optional[str] = None,
-        signature_html: Optional[str] = None
+        signature_html: Optional[str] = None,
+        attachments: Optional[List[Dict]] = None
     ) -> Email:
         """
         Send an email.
@@ -277,6 +300,20 @@ class EmailService:
             "X-Email-Source": "TaxPlatform",
         }
         
+
+        
+        # Process attachments for Graph API
+        graph_attachments = []
+        if attachments:
+            for att in attachments:
+                graph_attachments.append({
+                    "@odata.type": "#microsoft.graph.fileAttachment",
+                    "name": att["filename"],
+                    "contentBytes": att["content_bytes"],
+                    "contentType": att["content_type"],
+                    "isInline": att.get("is_inline", False)
+                })
+
         # Send via Graph API
         self.graph.send_email(
             to_recipients=to_recipients,
@@ -285,7 +322,8 @@ class EmailService:
             body_type=body_type,
             cc_recipients=cc_recipients,
             bcc_recipients=bcc_recipients,
-            custom_headers=custom_headers
+            custom_headers=custom_headers,
+            attachments=graph_attachments
         )
         
         # Create or get thread
@@ -332,10 +370,29 @@ class EmailService:
             status=EmailStatus.SENT.value,
             
             sent_date_time=datetime.utcnow(),
-            has_attachments=False,
+            has_attachments=bool(attachments),
+            attachment_count=len(attachments) if attachments else 0,
         )
         
         self.db.add(email)
+        
+        # Save attachment records
+        if attachments:
+            for att in attachments:
+                # Calculate size (approximate from base64)
+                size_bytes = (len(att["content_bytes"]) * 3) // 4
+                
+                attachment = EmailAttachment(
+                    id=str(uuid.uuid4()),
+                    email_id=email.id,
+                    file_name=att["filename"],
+                    content_type=att["content_type"],
+                    file_size=size_bytes,
+                    is_inline=att.get("is_inline", False),
+                    # Note: We are not storing the content in DB, just metadata
+                    # In a real app, upload to S3 here
+                )
+                self.db.add(attachment)
         
         # Update thread
         thread.last_message_id = email.id

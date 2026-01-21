@@ -11,12 +11,82 @@ import json
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 import pandas as pd
+import base64
+import time
 
 # Configuration
 API_BASE_URL = "http://localhost:8000"
 
-# Custom CSS for professional styling
 st.markdown("""
+<style>
+    /* Global Font & Reset */
+    @import url('https://fonts.googleapis.com/css2?family=Segoe+UI:wght@400;600&display=swap');
+    
+    html, body, [class*="css"] {
+        font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+        color: #201f1e;
+        -webkit-font-smoothing: antialiased;
+    }
+    
+    /* App Background */
+    .stApp {
+        background-color: #f3f2f1;
+    }
+    
+    /* Sidebar styling */
+    section[data-testid="stSidebar"] {
+        background-color: #faf9f8;
+        border-right: 1px solid #edebe9;
+    }
+    
+    section[data-testid="stSidebar"] hr {
+        margin: 1rem 0;
+        border-color: #edebe9;
+    }
+    
+    /* Button Styles (List Items) */
+    div[data-testid="stVerticalBlock"] > div > div > div > div > button { 
+        text-align: left !important;
+        border: 1px solid transparent !important;
+        background-color: white !important;
+        border-bottom: 1px solid #edebe9 !important;
+        border-radius: 0px !important;
+        padding: 12px 16px !important;
+        height: auto !important;
+        box-shadow: none !important;
+        transition: all 0.1s ease-in-out;
+    }
+    
+    div[data-testid="stVerticalBlock"] button:hover {
+        background-color: #f3f2f1 !important;
+        border-color: transparent !important;
+        border-left: 3px solid #0078d4 !important;
+        padding-left: 13px !important;
+    }
+    
+    /* Primary / Action Buttons */
+    button[kind="primary"] {
+        background-color: #0078d4 !important;
+        color: white !important;
+        border: none !important;
+    }
+
+    /* Inputs */
+    input[type="text"], textarea {
+        border-radius: 2px !important;
+        border: 1px solid #605e5c !important;
+    }
+    
+    /* Hide Header/Footer */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+</style>
+""", unsafe_allow_html=True)
+
+# Custom CSS for professional styling
+_old_css = """
 <style>
     /* Main layout */
     .main {
@@ -151,7 +221,7 @@ st.markdown("""
         margin: 8px 0;
     }
 </style>
-""", unsafe_allow_html=True)
+"""
 
 # Session state initialization
 def init_session_state():
@@ -162,10 +232,14 @@ def init_session_state():
         st.session_state.current_user = None
     if "selected_email" not in st.session_state:
         st.session_state.selected_email = None
+    if "selected_thread" not in st.session_state:
+        st.session_state.selected_thread = None
     if "selected_category" not in st.session_state:
         st.session_state.selected_category = "All"
     if "emails" not in st.session_state:
         st.session_state.emails = []
+    if "threads" not in st.session_state:
+        st.session_state.threads = []
     if "clients" not in st.session_state:
         st.session_state.clients = []
     if "templates" not in st.session_state:
@@ -261,6 +335,7 @@ def load_threads(status: str = None, limit: int = 50):
     
     result = make_api_call("GET", "/threads", params=params)
     if result.get("success"):
+        st.session_state.threads = result["data"].get("threads", [])
         return result["data"]
 
     return {"threads": [], "total": 0}
@@ -302,7 +377,7 @@ def sync_emails(folder: str = "inbox", limit: int = 50):
     return make_api_call("GET", "/emails/sync", params=params)
 
 def send_email(to_recipients: list, subject: str, body: str, cc: list = None, bcc: list = None, 
-               thread_id: str = None, client_id: str = None, signature_id: str = None):
+               thread_id: str = None, client_id: str = None, signature_id: str = None, attachments: list = None):
     """Send an email"""
     data = {
         "to_recipients": to_recipients,
@@ -320,6 +395,8 @@ def send_email(to_recipients: list, subject: str, body: str, cc: list = None, bc
         data["client_id"] = client_id
     if signature_id:
         data["signature_id"] = signature_id
+    if attachments:
+        data["attachments"] = attachments
     
     return make_api_call("POST", "/emails", data=data)
 
@@ -366,6 +443,12 @@ def delete_webhook_subscription():
     """Delete webhook subscription"""
     return make_api_call("DELETE", "/webhooks/subscribe")
 
+def trigger_sync():
+    """Trigger email sync"""
+    make_api_call("GET", "/emails/sync?folder=inbox&limit=5")
+    make_api_call("GET", "/emails/sync?folder=sentitems&limit=5")
+
+
 # UI Components
 def render_sidebar():
     """Render left sidebar with categories"""
@@ -382,8 +465,20 @@ def render_sidebar():
         st.markdown("---")
         
         # New Message button
-        if st.button("✉️ New Message", use_container_width=True):
+        if st.button("✉️ New Message", width='stretch'):
             st.session_state.show_compose = True
+            st.rerun()
+            
+        st.markdown("---")
+        
+        # Real-time Sync
+        st.markdown("### 🔄 Real-time")
+        auto_sync = st.toggle("Enable Auto-Sync", value=False, help="Automatically syncs emails every 10 seconds")
+        
+        if auto_sync:
+            st.caption("Syncing every 10s...")
+            time.sleep(10)
+            trigger_sync()
             st.rerun()
         
         st.markdown("---")
@@ -412,7 +507,7 @@ def render_sidebar():
         for category, count in categories.items():
             col1, col2 = st.columns([3, 1])
             with col1:
-                if st.button(category, key=f"cat_{category}", use_container_width=True):
+                if st.button(category, key=f"cat_{category}", width='stretch'):
                     st.session_state.selected_category = category
                     st.rerun()
             with col2:
@@ -421,30 +516,117 @@ def render_sidebar():
         
         st.markdown("---")
         st.markdown("### 🔧 Admin")
-        if st.button("⚙️ Settings", use_container_width=True):
+        if st.button("⚙️ Settings", width='stretch'):
             pass
 
 def render_email_list():
-    """Render middle panel with email list"""
+    """Render middle panel with thread list"""
     st.markdown(f"### {st.session_state.selected_category}")
     
     # Filters and search
     col1, col2 = st.columns([2, 1])
     with col1:
-        search = st.text_input("🔍 Search", placeholder="Search emails...")
+        search = st.text_input("🔍 Search", placeholder="Search conversations...")
     with col2:
-        if st.button("🔄 Refresh Emails"):
-            load_emails()
-            st.success("Emails refreshed!")
+        if st.button("🔄 Refresh Threads"):
+            load_threads()
+            st.success("Threads refreshed!")
     
     # Category tabs
     tab1, tab2 = st.tabs(["Corporate", "Non Corporate"])
     
     with tab1:
-        render_email_items("corporate")
+        render_thread_items("corporate", search)
     
     with tab2:
-        render_email_items("non_corporate")
+        render_thread_items("non_corporate", search)
+    
+    if search:
+        st.caption(f"Showing results for '{search}'")
+
+def render_thread_items(client_type: str, search_term: str = None):
+    """Render list of threads with optional search filter"""
+    if not st.session_state.threads:
+        st.info("No conversations to display. Click 'Sync from Outlook' to fetch emails.")
+        if st.button(f"📥 Sync from Outlook ({client_type})", key=f"sync_{client_type}"):
+            with st.spinner("Syncing emails..."):
+                result = sync_emails()
+                if result.get("success"):
+                    st.success(f"✅ Synced {result['data'].get('synced', 0)} emails")
+                    load_threads()
+                    st.rerun()
+                else:
+                    st.error(f"❌ Sync failed: {result.get('error', 'Unknown error')}")
+        return
+    
+    # Filter and display threads
+    matches = []
+    
+    # Pre-filter to get relevant threads
+    for thread in st.session_state.threads:
+        if search_term:
+            term = search_term.lower()
+            subject = thread.get("subject", "").lower()
+            sender = thread.get("latest_sender_name", "").lower()
+            preview = thread.get("preview", "").lower()
+            
+            if term not in subject and term not in sender and term not in preview:
+                continue
+                
+        matches.append(thread)
+    
+    if not matches:
+        if search_term:
+             st.info(f"No matches found for '{search_term}'")
+        return
+
+    for i, thread in enumerate(matches[:20]):  # Limit display items
+        thread_id = thread.get("id", "")
+        subject = thread.get("subject", "No Subject")
+        message_count = thread.get("message_count", 0)
+        last_activity = thread.get("last_activity_at", "")
+        email_type = thread.get("email_type", "GENERAL")
+        is_flagged = thread.get("is_flagged", False)
+        
+        # Format time
+        try:
+            dt = datetime.fromisoformat(last_activity.replace("Z", "+00:00"))
+            time_str = dt.strftime("%I:%M%p")
+        except:
+            time_str = ""
+        
+        # Thread item (Outlook style: Sender → Subject → Preview)
+        with st.container():
+            col1, col2 = st.columns([4, 1])
+            
+            with col1:
+                # Get sender and preview from thread data
+                sender_name = thread.get("latest_sender_name", "Unknown Sender")
+                preview = thread.get("preview", "")
+                
+                # Truncate preview to keep it short  
+                if preview and len(preview) > 60:
+                    preview = preview[:60] + "..."
+                
+                #  Outlook-style display: Sender (bold) → Subject → Preview
+                display_text = f"**{sender_name}**\n{subject}\n{preview}" if preview else f"**{sender_name}**\n{subject}"
+                
+                if st.button(
+                    display_text,
+                    key=f"thread_{thread_id}_{client_type}_{i}",
+                    width='stretch'
+                ):
+                    st.session_state.selected_thread = thread_id
+                    st.session_state.selected_email = None
+                    st.rerun()
+            
+            with col2:
+                st.caption(time_str)
+                if is_flagged:
+                    st.caption("🚩")
+        
+        st.markdown("---")
+
 
 def render_email_items(client_type: str):
     """Render list of emails"""
@@ -500,7 +682,7 @@ def render_email_items(client_type: str):
                 if st.button(
                     f"{'🔴' if not is_read else '⚪'} **{sender}**\n{subject[:60]}...",
                     key=f"email_{email_id}_{client_type}_{i}",
-                    use_container_width=True
+                    width='stretch'
                 ):
                     st.session_state.selected_email = email_id
                     st.rerun()
@@ -530,8 +712,14 @@ def render_email_viewer():
         render_compose_email()
         return
     
+    # Check for thread selection first
+    if st.session_state.selected_thread:
+        render_thread_conversation()
+        return
+    
+    # Fall back to individual email view
     if not st.session_state.selected_email:
-        st.info("Select an email to view details")
+        st.info("Select a conversation to view details")
         return
     
     # Find selected email
@@ -615,6 +803,184 @@ def render_email_viewer():
         st.markdown("### 📎 Attachments")
         st.info("Attachment list would appear here")
 
+def render_thread_conversation():
+    """Render full conversation thread (Outlook style)"""
+    thread_data = load_thread_details(st.session_state.selected_thread)
+    
+    if not thread_data:
+        st.warning("Conversation not found")
+        return
+    
+    # Thread header
+    st.markdown(f"## {thread_data.get('subject', 'No Subject')}")
+    
+    # Badges and close button
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        if thread_data.get("email_type"):
+            st.markdown(f"<span class='badge badge-action'>{thread_data['email_type']}</span>", unsafe_allow_html=True)
+        if thread_data.get("is_flagged"):
+            st.markdown(f"<span class='badge badge-priority'>High Priority</span>", unsafe_allow_html=True)
+    with col2:
+        if st.button("❌ Close"):
+            st.session_state.selected_thread = None
+            st.rerun()
+    
+    st.markdown("---")
+    
+    # Conversation info
+    message_count = thread_data.get("message_count", 0)
+    st.markdown(f"**💬 {message_count} message{'s' if message_count != 1 else ''}**")
+    
+    st.markdown("---")
+    
+    # Display all emails in thread (chronological order)
+    emails = thread_data.get("emails", [])
+    
+    if not emails:
+        st.info("No messages in this conversation")
+        return
+    
+    # Sort to show oldest first (Outlook style)
+    emails_sorted = sorted(emails, key=lambda e: e.get("received_date_time", "") or e.get("sent_date_time", ""))
+    
+    for i, email in enumerate(emails_sorted):
+        direction = email.get("direction", "incoming")
+        from_addr = email.get("from_address", "")
+        from_name = email.get("from_name", "")
+        to_recipients = email.get("to_recipients", [])
+        timestamp = email.get("received_date_time") or email.get("sent_date_time", "")
+        
+        # Get body content with better fallback
+        body = email.get("body")
+        if not body or body.strip() == "":
+            body = email.get("body_html")
+        if not body or body.strip() == "":
+            body = email.get("body_preview")
+        if not body or body.strip() == "":
+            body = "(No message content available)"
+        
+        has_attachments = email.get("has_attachments", False)
+        
+        # Format sender
+        if from_name and from_addr:
+            sender = f"{from_name} <{from_addr}>"
+        elif from_name:
+            sender = from_name
+        elif from_addr:
+            sender = from_addr
+        else:
+            sender = "Unknown"
+        
+        # Format timestamp
+        try:
+            dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            time_display = dt.strftime("%b %d, %Y at %I:%M %p")
+        except:
+            time_display = timestamp
+        
+        # Message container with styling based on direction
+        if direction == "outgoing":
+            st.markdown(f"### 📤 {sender}")
+            st.caption(f"To: {', '.join(to_recipients) if to_recipients else 'Unknown'}")
+        else:
+            st.markdown(f"### 📥 {sender}")
+        
+        st.caption(f"🕒 {time_display}")
+        
+        if has_attachments:
+            st.caption("📎 Has attachments")
+        
+        # Message body
+        with st.expander("View message", expanded=(i == len(emails_sorted) - 1)):
+            st.markdown(body, unsafe_allow_html=True)
+        
+        st.markdown("---")
+    
+    st.markdown("---")
+    
+    # Inline Reply Section
+    if "reply_active_thread" not in st.session_state:
+        st.session_state.reply_active_thread = None
+        
+    latest_email = emails_sorted[-1] if emails_sorted else None
+    
+    # Check if this thread has active reply
+    is_replying = st.session_state.reply_active_thread == st.session_state.selected_thread
+    
+    if not is_replying:
+        # Show Reply button
+        if st.button("↩️ Reply to Thread", width='stretch', key="btn_init_reply"):
+            st.session_state.reply_active_thread = st.session_state.selected_thread
+            st.rerun()
+    else:
+        # Show Inline Reply Form
+        st.markdown(f"### ↩️ Reply to {latest_email.get('from_name') or 'Sender'}")
+        
+        with st.form(key="inline_reply_form"):
+            # Determine recipients
+            default_to = ""
+            if latest_email:
+                if latest_email.get("direction") == "outgoing":
+                    recipients = latest_email.get("to_recipients", [])
+                    default_to = recipients[0] if recipients else ""
+                else:
+                    default_to = latest_email.get("from_address", "")
+            
+            # Hidden or read-only To field context
+            st.caption(f"Replying to: {default_to}")
+            
+            reply_body = st.text_area("Message", height=200, placeholder="Type your reply here...")
+            
+            attachments = st.file_uploader("Attach files", accept_multiple_files=True)
+            
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                submit = st.form_submit_button("📨 Send Reply", type="primary", use_container_width=True)
+            with col2:
+                cancel = st.form_submit_button("❌ Cancel", use_container_width=True)
+            
+            if cancel:
+                st.session_state.reply_active_thread = None
+                st.rerun()
+                
+            if submit and reply_body:
+                # Prepare payload
+                payload = {
+                    "to_recipients": [default_to] if default_to else [],
+                    "subject": latest_email.get("subject", "No Subject"),
+                    "body": reply_body,
+                    "body_type": "HTML",
+                    "thread_id": st.session_state.selected_thread
+                }
+                
+                # Check subject prefix
+                if not payload["subject"].lower().startswith("re:"):
+                    payload["subject"] = "Re: " + payload["subject"]
+                
+                # Handle attachments (basic implementation if needed, or skip for now)
+                # To support attachments, we need to convert them to base64
+                if attachments:
+                    att_list = []
+                    for att in attachments:
+                        content = base64.b64encode(att.read()).decode()
+                        att_list.append({
+                            "name": att.name,
+                            "content_bytes": content,
+                            "content_type": att.type or "application/octet-stream"
+                        })
+                    payload["attachments"] = att_list
+
+                with st.spinner("Sending reply..."):
+                    response = make_api_call("POST", "/emails", data=payload)
+                    
+                    if response:
+                        st.success("Reply sent!")
+                        st.session_state.reply_active_thread = None
+                        time.sleep(1) # Wait for backend sync?
+                        # Trigger a sync to get the new sent item
+                        make_api_call("GET", "/emails/sync?folder=sentitems&limit=1")
+                        st.rerun()
 def render_compose_email():
     """Render email composition form"""
     st.markdown("## ✉️ Compose New Email")
@@ -632,16 +998,27 @@ def render_compose_email():
     # Form fields
     with st.form("compose_email_form"):
         # Recipients
-        to_input = st.text_input("To:", placeholder="email@example.com")
-        cc_input = st.text_input("CC:", placeholder="email@example.com (optional)")
-        bcc_input = st.text_input("BCC:", placeholder="email@example.com (optional)")
+        to_val = st.session_state.get("compose_to", "")
+        to_input = st.text_input("To:", value=to_val, placeholder="email@example.com")
+        
+        cc_val = st.session_state.get("compose_cc", "")
+        cc_input = st.text_input("CC:", value=cc_val, placeholder="email@example.com (optional)")
+        
+        bcc_val = st.session_state.get("compose_bcc", "")
+        bcc_input = st.text_input("BCC:", value=bcc_val, placeholder="email@example.com (optional)")
         
         # Subject
-        subject = st.text_input("Subject:", placeholder="Enter subject")
+        subj_val = st.session_state.get("compose_subject", "")
+        subject = st.text_input("Subject:", value=subj_val, placeholder="Enter subject")
         
         # Body
         st.markdown("### Email Body")
-        body = st.text_area("Body", height=300, placeholder="Compose your email...", label_visibility="collapsed")
+        body_val = st.session_state.get("compose_body", "")
+        body = st.text_area("Body", value=body_val, height=300, placeholder="Compose your email...", label_visibility="collapsed")
+        
+        # Attachments
+        st.markdown("### 📎 Attachments")
+        uploaded_files = st.file_uploader("Upload files", accept_multiple_files=True)
         
         # Options
         col1, col2 = st.columns(2)
@@ -656,9 +1033,9 @@ def render_compose_email():
         # Submit buttons
         col1, col2 = st.columns(2)
         with col1:
-            send_button = st.form_submit_button("📤 Send", use_container_width=True)
+            send_button = st.form_submit_button("📤 Send", width='stretch')
         with col2:
-            draft_button = st.form_submit_button("💾 Save Draft", use_container_width=True)
+            draft_button = st.form_submit_button("💾 Save Draft", width='stretch')
         
         if send_button:
             if not to_input or not subject:
@@ -668,8 +1045,20 @@ def render_compose_email():
                 cc_list = [email.strip() for email in cc_input.split(",")] if cc_input else None
                 bcc_list = [email.strip() for email in bcc_input.split(",")] if bcc_input else None
                 
+                # Process attachments
+                processed_attachments = []
+                if uploaded_files:
+                    for uploaded_file in uploaded_files:
+                        bytes_data = uploaded_file.getvalue()
+                        b64_data = base64.b64encode(bytes_data).decode()
+                        processed_attachments.append({
+                            "filename": uploaded_file.name,
+                            "content_bytes": b64_data,
+                            "content_type": uploaded_file.type or "application/octet-stream"
+                        })
+                
                 with st.spinner("Sending email..."):
-                    result = send_email(to_list, subject, body, cc_list, bcc_list)
+                    result = send_email(to_list, subject, body, cc_list, bcc_list, attachments=processed_attachments)
                     if result.get("success"):
                         st.success("✅ Email sent successfully!")
                         st.session_state.show_compose = False
@@ -757,7 +1146,7 @@ def render_testing_panel():
                         if st.button(
                             f"📁 **{thread.get('subject', 'No Subject')}**\n{thread.get('message_count', 0)} messages",
                             key=f"thread_{thread.get('id')}",
-                            use_container_width=True
+                            width='stretch'
                         ):
                             st.session_state.selected_thread_id = thread.get('id')
                             st.rerun()
@@ -826,7 +1215,7 @@ def render_testing_panel():
         # Show Thread List
         elif st.session_state.get("threads_list"):
             df = pd.DataFrame(st.session_state.threads_list)
-            st.dataframe(df[["id", "subject", "status", "message_count", "last_activity_at"]], use_container_width=True)
+            st.dataframe(df[["id", "subject", "status", "message_count", "last_activity_at"]], width='stretch')
             
             st.markdown("### Select Thread to View")
             for thread in st.session_state.threads_list:
@@ -918,7 +1307,7 @@ def render_testing_panel():
                     
                     if results:
                         df = pd.DataFrame(results)
-                        st.dataframe(df, use_container_width=True)
+                        st.dataframe(df, width='stretch')
                 else:
                     st.error(f"❌ Search failed: {result.get('error')}")
     
@@ -939,7 +1328,7 @@ def render_testing_panel():
                 failed = len(df[df["success"] == False])
                 st.metric("Failed", failed)
             
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, width='stretch')
         else:
             st.info("No test results yet. Run some tests to see results here.")
 
@@ -993,7 +1382,7 @@ def main():
                     if result.get("success"):
                         auth_url = result["data"].get("auth_url")
                         if auth_url:
-                            st.link_button("🔐 Login with Microsoft", auth_url, type="primary", use_container_width=True)
+                            st.link_button("🔐 Login with Microsoft", auth_url, type="primary", width='stretch')
                         else:
                             st.error("Could not generate auth URL")
                     else:
