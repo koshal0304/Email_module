@@ -72,7 +72,7 @@ class EmailThread(Base):
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
-    last_activity_at = Column(DateTime, default=datetime.utcnow)
+    last_activity_at = Column(DateTime)  # No default - set from email timestamp
     
     # Status
     status = Column(String(50), default=ThreadStatus.AWAITING_REPLY.value)

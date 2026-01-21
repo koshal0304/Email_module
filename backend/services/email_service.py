@@ -96,7 +96,15 @@ class EmailService:
         else:
             email_timestamp = datetime.utcnow()
         
-        if thread.last_activity_at is None or email_timestamp > thread.last_activity_at:
+        # ALWAYS update last_activity_at - this is a newly synced email
+        # For the first email in a new thread, this sets the correct time
+        # For subsequent emails, we take the latest timestamp
+        if thread.last_activity_at is None or thread.message_count == 0:
+            thread.last_activity_at = email_timestamp
+        elif email_timestamp > thread.last_activity_at:
+            thread.last_activity_at = email_timestamp
+        # If email is older than current last_activity, still update if thread is brand new
+        elif thread.message_count == 0:
             thread.last_activity_at = email_timestamp
         thread.message_count = (thread.message_count or 0) + 1
         
