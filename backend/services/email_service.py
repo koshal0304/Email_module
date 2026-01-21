@@ -62,7 +62,7 @@ class EmailService:
             return existing
         
         # Run threading engine
-        threading_result = self.threading_engine.thread_email(email_data)
+        threading_result = self.threading_engine.thread_email(email_data, user.email)
         
         # Classify email
         subject = email_data.get("subject", "")
@@ -86,7 +86,18 @@ class EmailService:
         
         # Update thread metadata
         thread.last_message_id = email.id
-        thread.last_activity_at = datetime.utcnow()
+        # Extract timestamp directly from email_data (more reliable than email object)
+        received_str = email_data.get("receivedDateTime") or email_data.get("sentDateTime")
+        if received_str:
+            email_timestamp = datetime.fromisoformat(received_str.replace("Z", "+00:00"))
+            # Normalize to naive datetime for comparison (strip timezone info)
+            if email_timestamp.tzinfo is not None:
+                email_timestamp = email_timestamp.replace(tzinfo=None)
+        else:
+            email_timestamp = datetime.utcnow()
+        
+        if thread.last_activity_at is None or email_timestamp > thread.last_activity_at:
+            thread.last_activity_at = email_timestamp
         thread.message_count = (thread.message_count or 0) + 1
         
         # Set first message if not set

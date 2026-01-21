@@ -85,7 +85,7 @@ class EmailThread(Base):
         "Email", 
         back_populates="thread", 
         cascade="all, delete-orphan",
-        order_by="Email.received_date_time"
+        order_by="Email.received_date_time.desc()"
     )
     
     __table_args__ = (
