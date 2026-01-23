@@ -1,0 +1,10 @@
+node_modules
+dist
+coverage
+logs
+*.log
+.env
+.env.*
+prisma/*.db
+prisma/*.db-journal
+package-lock.json

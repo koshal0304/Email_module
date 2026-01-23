@@ -1,0 +1,420 @@
+// =============================================================================
+// Prisma Schema - Email Backend Module
+// =============================================================================
+// Production-ready database schema for Microsoft Outlook email integration
+// with sophisticated threading, classification, and audit logging.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// ENUMS
+// =============================================================================
+
+/// Email classification types for tax-related communications
+enum EmailType {
+  NIL_FILING
+  VAT_FILING
+  GST_FILING
+  ITR_SUBMISSION
+  DOC_REQUEST
+  COMPLIANCE_NOTICE
+  RTI_SUBMISSION
+  GENERAL
+}
+
+/// Status of an email thread/conversation
+enum ThreadStatus {
+  awaiting_reply
+  replied
+  resolved
+  archived
+}
+
+/// Direction of email flow
+enum EmailDirection {
+  incoming
+  outgoing
+}
+
+/// Current status of an email
+enum EmailStatus {
+  draft
+  sent
+  received
+  failed
+}
+
+/// User roles for RBAC
+enum UserRole {
+  admin
+  accountant
+  client_manager
+}
+
+// =============================================================================
+// USER MODEL
+// =============================================================================
+
+/// Represents authenticated users with Microsoft OAuth tokens
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  firstName String?  @map("first_name")
+  lastName  String?  @map("last_name")
+
+  // OAuth tokens (encrypted at rest)
+  accessToken    String?   @map("access_token") @db.Text
+  refreshToken   String?   @map("refresh_token") @db.Text
+  tokenExpiresAt DateTime? @map("token_expires_at")
+
+  // Microsoft Graph webhook subscription
+  graphSubscriptionId        String?   @map("graph_subscription_id")
+  graphSubscriptionExpiresAt DateTime? @map("graph_subscription_expires_at")
+
+  // Role-based access control
+  role     UserRole @default(accountant)
+  isActive Boolean  @default(true) @map("is_active")
+
+  // User preferences
+  defaultSignatureId String? @map("default_signature_id")
+
+  // Sync tracking
+  lastEmailSyncTime DateTime? @map("last_email_sync_time")
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  emails     Email[]
+  signatures EmailSignature[]
+  templates  EmailTemplate[]
+  auditLogs  AuditLog[]
+
+  @@index([email])
+  @@map("users")
+}
+
+// =============================================================================
+// CLIENT MODEL
+// =============================================================================
+
+/// Represents tax clients with their associated details
+model Client {
+  id      String  @id @default(uuid())
+  name    String
+  email   String?
+  phone   String?
+  address String? @db.Text
+
+  // Classification
+  clientType String? @map("client_type") // corporate, non_corporate
+  taxYear    String? @map("tax_year")
+
+  // Tax identifiers
+  pan   String? @unique
+  gstin String?
+  tan   String?
+
+  // Contact person
+  contactPersonName  String? @map("contact_person_name")
+  contactPersonEmail String? @map("contact_person_email")
+  contactPersonPhone String? @map("contact_person_phone")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  emailThreads EmailThread[]
+  emails       Email[]
+  footers      EmailFooter[]
+  auditLogs    AuditLog[]
+
+  @@index([name])
+  @@index([pan])
+  @@index([clientType], map: "clients_client_type_idx")
+  @@map("clients")
+}
+
+// =============================================================================
+// EMAIL THREAD MODEL
+// =============================================================================
+
+/// Groups related emails into conversations
+model EmailThread {
+  id       String  @id @default(uuid())
+  clientId String? @map("client_id")
+
+  // Thread metadata
+  subject        String     @db.VarChar(500)
+  emailType      EmailType? @map("email_type")
+  conversationId String?    @map("conversation_id")
+  taxEmailId     String?    @unique @map("tax_email_id")
+
+  // Message tracking
+  firstMessageId String? @map("first_message_id")
+  lastMessageId  String? @map("last_message_id")
+  messageCount   Int     @default(0) @map("message_count")
+
+  // Timestamps
+  createdAt      DateTime  @default(now()) @map("created_at")
+  lastActivityAt DateTime? @map("last_activity_at")
+
+  // Status flags
+  status     ThreadStatus @default(awaiting_reply)
+  isArchived Boolean      @default(false) @map("is_archived")
+  isFlagged  Boolean      @default(false) @map("is_flagged")
+
+  // Relations
+  client    Client?    @relation(fields: [clientId], references: [id])
+  emails    Email[]
+  auditLogs AuditLog[]
+
+  @@index([clientId], map: "email_threads_client_id_idx")
+  @@index([conversationId], map: "email_threads_conversation_id_idx")
+  @@index([taxEmailId], map: "email_threads_tax_email_id_idx")
+  @@index([emailType], map: "email_threads_email_type_idx")
+  @@index([status, lastActivityAt], map: "email_threads_status_activity_idx")
+  @@map("email_threads")
+}
+
+// =============================================================================
+// EMAIL MODEL
+// =============================================================================
+
+/// Individual email messages synced from Microsoft Graph
+model Email {
+  id       String @id @default(uuid())
+  threadId String @map("thread_id")
+
+  // Microsoft Graph API ID
+  graphMessageId String? @unique @map("graph_message_id")
+
+  // Content
+  subject     String  @db.VarChar(500)
+  body        String? @db.Text
+  bodyHtml    String? @map("body_html") @db.Text
+  bodyPreview String? @map("body_preview") @db.VarChar(500)
+
+  // Participants (JSON arrays)
+  fromAddress   String @map("from_address")
+  fromName      String? @map("from_name")
+  toRecipients  Json   @default("[]") @map("to_recipients")
+  ccRecipients  Json   @default("[]") @map("cc_recipients")
+  bccRecipients Json   @default("[]") @map("bcc_recipients")
+  replyTo       Json   @default("[]") @map("reply_to")
+
+  // RFC 5322 threading headers
+  internetMessageId String? @unique @map("internet_message_id")
+  inReplyToId       String? @map("in_reply_to_id")
+  references        String? @db.Text
+  conversationId    String? @map("conversation_id")
+  conversationIndex String? @map("conversation_index")
+
+  // Custom headers for tax tracking
+  taxEmailId String? @unique @map("tax_email_id")
+
+  // Classification
+  emailType EmailType? @map("email_type")
+  clientId  String?    @map("client_id")
+  userId    String?    @map("user_id")
+
+  // Status
+  direction EmailDirection?
+  isRead    Boolean        @default(false) @map("is_read")
+  status    EmailStatus    @default(received)
+
+  // Timestamps
+  receivedDateTime DateTime? @map("received_date_time")
+  sentDateTime     DateTime? @map("sent_date_time")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  // Attachment metadata
+  hasAttachments  Boolean @default(false) @map("has_attachments")
+  attachmentCount Int     @default(0) @map("attachment_count")
+
+  // Flags
+  isFlagged  Boolean @default(false) @map("is_flagged")
+  isArchived Boolean @default(false) @map("is_archived")
+  importance String  @default("normal")
+
+  // Folder info
+  folderId   String? @map("folder_id")
+  folderName String? @map("folder_name")
+
+  // Relations
+  thread      EmailThread       @relation(fields: [threadId], references: [id])
+  client      Client?           @relation(fields: [clientId], references: [id])
+  user        User?             @relation(fields: [userId], references: [id])
+  attachments EmailAttachment[]
+  auditLogs   AuditLog[]
+
+  @@index([threadId], map: "emails_thread_id_idx")
+  @@index([graphMessageId], map: "emails_graph_message_id_idx")
+  @@index([fromAddress], map: "emails_from_address_idx")
+  @@index([receivedDateTime], map: "emails_received_date_time_idx")
+  @@index([emailType], map: "emails_email_type_idx")
+  @@index([userId, receivedDateTime], map: "emails_user_received_idx")
+  @@index([clientId, emailType], map: "emails_client_type_idx")
+  @@map("emails")
+}
+
+// =============================================================================
+// EMAIL ATTACHMENT MODEL
+// =============================================================================
+
+/// File attachments linked to emails
+model EmailAttachment {
+  id      String @id @default(uuid())
+  emailId String @map("email_id")
+
+  // Microsoft Graph API ID
+  graphAttachmentId String? @map("graph_attachment_id")
+
+  // File metadata
+  fileName    String  @map("file_name") @db.VarChar(500)
+  fileSize    Int?    @map("file_size")
+  contentType String? @map("content_type")
+
+  // Storage location
+  storageKey String? @map("storage_key")
+  storageUrl String? @map("storage_url")
+  isInline   Boolean @default(false) @map("is_inline")
+  contentId  String? @map("content_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  email Email @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  @@map("email_attachments")
+}
+
+// =============================================================================
+// EMAIL SIGNATURE MODEL
+// =============================================================================
+
+/// User-specific email signatures
+model EmailSignature {
+  id     String @id @default(uuid())
+  userId String @map("user_id")
+
+  name          String  @db.VarChar(100)
+  signatureHtml String? @map("signature_html") @db.Text
+  signatureText String? @map("signature_text") @db.Text
+
+  isDefault Boolean @default(false) @map("is_default")
+  isActive  Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId], map: "email_signatures_user_id_idx")
+  @@map("email_signatures")
+}
+
+// =============================================================================
+// EMAIL FOOTER MODEL
+// =============================================================================
+
+/// Client-specific email footers (e.g., for compliance)
+model EmailFooter {
+  id       String  @id @default(uuid())
+  clientId String? @map("client_id")
+
+  name       String  @db.VarChar(100)
+  footerHtml String? @map("footer_html") @db.Text
+  footerText String? @map("footer_text") @db.Text
+
+  appliesToType String? @map("applies_to_type") // corporate, non_corporate
+  isDefault     Boolean @default(false) @map("is_default")
+  isActive      Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  client Client? @relation(fields: [clientId], references: [id])
+
+  @@index([clientId], map: "email_footers_client_id_idx")
+  @@map("email_footers")
+}
+
+// =============================================================================
+// EMAIL TEMPLATE MODEL
+// =============================================================================
+
+/// Reusable email templates with variable substitution
+model EmailTemplate {
+  id String @id @default(uuid())
+
+  name        String     @db.VarChar(200)
+  description String?    @db.Text
+  emailType   EmailType? @map("email_type")
+
+  subjectTemplate  String  @map("subject_template") @db.VarChar(500)
+  bodyTemplate     String? @map("body_template") @db.Text
+  bodyHtmlTemplate String? @map("body_html_template") @db.Text
+
+  // Template variables (JSON array of variable names)
+  variables Json @default("[]")
+
+  createdBy  String? @map("created_by")
+  isActive   Boolean @default(true) @map("is_active")
+  usageCount Int     @default(0) @map("usage_count")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  creator User? @relation(fields: [createdBy], references: [id])
+
+  @@index([emailType], map: "email_templates_email_type_idx")
+  @@map("email_templates")
+}
+
+// =============================================================================
+// AUDIT LOG MODEL
+// =============================================================================
+
+/// Immutable audit trail for compliance and tracking
+model AuditLog {
+  id String @id @default(uuid())
+
+  userId   String? @map("user_id")
+  emailId  String? @map("email_id")
+  threadId String? @map("thread_id")
+  clientId String? @map("client_id")
+
+  action    String
+  ipAddress String? @map("ip_address")
+  userAgent String? @map("user_agent") @db.VarChar(500)
+  details   Json    @default("{}")
+
+  timestamp DateTime @default(now())
+
+  // Relations
+  user   User?        @relation(fields: [userId], references: [id])
+  email  Email?       @relation(fields: [emailId], references: [id], onDelete: SetNull)
+  thread EmailThread? @relation(fields: [threadId], references: [id], onDelete: SetNull)
+  client Client?      @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  @@index([userId, action, timestamp], map: "audit_logs_user_action_idx")
+  @@index([clientId, action, timestamp], map: "audit_logs_client_action_idx")
+  @@index([emailId, action], map: "audit_logs_email_action_idx")
+  @@map("audit_logs")
+}
