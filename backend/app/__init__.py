@@ -1,3 +1,0 @@
-"""
-Email Module - App Package
-"""
