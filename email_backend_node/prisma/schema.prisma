@@ -59,6 +59,25 @@ enum UserRole {
   client_manager
 }
 
+enum TemplateType {
+  NIL_CONFIRMATION
+  CHECKLIST
+  COI
+  ITR
+}
+
+
+enum AttachmentType {
+  FILE
+  IMAGE
+}
+
+enum AttachmentSource {
+  STATIC
+  GENERATED
+  VARIABLE
+}
+
 // =============================================================================
 // USER MODEL
 // =============================================================================
@@ -67,6 +86,7 @@ enum UserRole {
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
+  name      String?
   firstName String?  @map("first_name")
   lastName  String?  @map("last_name")
 
@@ -84,7 +104,8 @@ model User {
   isActive Boolean  @default(true) @map("is_active")
 
   // User preferences
-  defaultSignatureId String? @map("default_signature_id")
+  defaultSignature   EmailSignature? @relation("DefaultSignature", fields: [defaultSignatureId], references: [id])
+  defaultSignatureId String?         @unique @map("default_signature_id")
 
   // Sync tracking
   lastEmailSyncTime DateTime? @map("last_email_sync_time")
@@ -94,10 +115,11 @@ model User {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  emails     Email[]
-  signatures EmailSignature[]
-  templates  EmailTemplate[]
-  auditLogs  AuditLog[]
+  emails           Email[]
+  signatures       EmailSignature[] @relation("UserSignatures")
+  templates        EmailTemplate[]  @relation("CreatedTemplates")
+  updatedTemplates EmailTemplate[]  @relation("UpdatedTemplates")
+  auditLogs        AuditLog[]
 
   @@index([email])
   @@map("users")
@@ -321,7 +343,9 @@ model EmailSignature {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  user User @relation(fields: [userId], references: [id])
+  user        User  @relation("UserSignatures", fields: [userId], references: [id])
+  defaultUser User? @relation("DefaultSignature")
+  templates   EmailTemplate[]
 
   @@index([userId], map: "email_signatures_user_id_idx")
   @@map("email_signatures")
@@ -354,37 +378,74 @@ model EmailFooter {
   @@map("email_footers")
 }
 
-// =============================================================================
-// EMAIL TEMPLATE MODEL
-// =============================================================================
-
-/// Reusable email templates with variable substitution
+/// Reusable email templates with variable substitution and configuration
 model EmailTemplate {
   id String @id @default(uuid())
 
-  name        String     @db.VarChar(200)
-  description String?    @db.Text
-  emailType   EmailType? @map("email_type")
+  templateName       String       @map("template_name") @db.VarChar(200)
+  templateType       TemplateType @map("template_type")
+  isActive           Boolean      @default(true) @map("is_active")
+  isReminderTemplate Boolean      @default(false) @map("is_reminder_template")
 
-  subjectTemplate  String  @map("subject_template") @db.VarChar(500)
-  bodyTemplate     String? @map("body_template") @db.Text
-  bodyHtmlTemplate String? @map("body_html_template") @db.Text
+  subject String @db.VarChar(500)
+  to      String? @db.Text
+  cc      String? @db.Text
+  bcc     String? @db.Text
+  body    String @db.Text
 
-  // Template variables (JSON array of variable names)
-  variables Json @default("[]")
+  duplicatedFromId String? @map("duplicated_from_id")
+  signatureId      String? @map("signature_id")
 
-  createdBy  String? @map("created_by")
-  isActive   Boolean @default(true) @map("is_active")
-  usageCount Int     @default(0) @map("usage_count")
+  createdById  String? @map("created_by_id")
+  modifiedById String? @map("modified_by_id")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   // Relations
-  creator User? @relation(fields: [createdBy], references: [id])
+  attachments    TemplateAttachment[]
+  creator        User?                  @relation("CreatedTemplates", fields: [createdById], references: [id])
+  modifier       User?                  @relation("UpdatedTemplates", fields: [modifiedById], references: [id])
+  signature      EmailSignature?        @relation(fields: [signatureId], references: [id])
 
-  @@index([emailType], map: "email_templates_email_type_idx")
+  @@index([duplicatedFromId])
+  @@index([templateType], map: "email_templates_template_type_idx")
   @@map("email_templates")
+}
+
+
+/// Attachments specifically for email templates
+model TemplateAttachment {
+  id              String           @id @default(uuid())
+  emailTemplateId String           @map("email_template_id")
+  name            String           @db.VarChar(500)
+  fileUrl         String           @map("file_url")
+  mimeType        String           @map("mime_type")
+  size            Int
+  attachmentType  AttachmentType   @map("attachment_type")
+  source          AttachmentSource
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  template EmailTemplate @relation(fields: [emailTemplateId], references: [id], onDelete: Cascade)
+
+  @@map("template_attachments")
+}
+
+/// Variables that can be injected into templates
+model TemplateVariable {
+  id           String        @id @default(uuid())
+  label        String
+  key          String        @unique
+  templateType TemplateType? @map("template_type")
+  isActive     Boolean       @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("template_variables")
 }
 
 // =============================================================================

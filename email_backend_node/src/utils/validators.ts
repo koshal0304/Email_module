@@ -5,7 +5,7 @@
 // =============================================================================
 
 import { z } from 'zod';
-import { EmailType, ThreadStatus } from '@prisma/client';
+import { EmailType, ThreadStatus, TemplateType, TriggerType, AttachmentType, AttachmentSource } from '@prisma/client';
 
 // =============================================================================
 // Common Schemas
@@ -165,13 +165,17 @@ export const createSignatureSchema = z.object({
 export const updateSignatureSchema = createSignatureSchema.partial();
 
 export const createTemplateSchema = z.object({
-    name: z.string().min(1, 'Name is required').max(200),
-    description: z.string().max(1000).optional(),
-    emailType: z.nativeEnum(EmailType).optional(),
-    subjectTemplate: z.string().min(1, 'Subject template is required').max(500),
-    bodyTemplate: z.string().optional(),
-    bodyHtmlTemplate: z.string().optional(),
-    variables: z.array(z.string()).default([]),
+    templateName: z.string().min(1, 'Template name is required').max(200),
+    templateType: z.nativeEnum(TemplateType).default(TemplateType.NIL_CONFIRMATION),
+    isActive: z.boolean().default(true),
+    isReminderTemplate: z.boolean().default(false),
+    subject: z.string().min(1, 'Subject is required').max(500),
+    to: z.string().optional(),
+    cc: z.string().optional(),
+    bcc: z.string().optional(),
+    body: z.string().min(1, 'Body is required'),
+    duplicatedFromId: uuidSchema.optional(),
+    signatureId: uuidSchema.optional(),
 });
 
 export const updateTemplateSchema = createTemplateSchema.partial();

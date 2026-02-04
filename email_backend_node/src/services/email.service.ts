@@ -9,7 +9,7 @@ import { authService } from './auth.service';
 import { createGraphService } from './graph.service';
 import { classificationService } from './classification.service';
 import { threadingEngine } from './threading.service';
-import { NotFoundError, EmailSendError, EmailSyncError } from '../utils/exceptions';
+import { NotFoundError, EmailSendError, EmailSyncError, MicrosoftQuotaExceededError } from '../utils/exceptions';
 import { Email, EmailThread, EmailType, EmailDirection, Prisma } from '@prisma/client';
 import {
     SendEmailRequest,
@@ -463,14 +463,14 @@ export async function sendEmail(userId: string, request: SendEmailRequest): Prom
                 userId,
                 attachments: request.attachments
                     ? {
-                          create: request.attachments.map((a) => ({
-                              id: uuidv4(),
-                              fileName: a.name,
-                              contentType: a.contentType,
-                              fileSize: Buffer.from(a.contentBytes, 'base64').length,
-                              isInline: false,
-                          })),
-                      }
+                        create: request.attachments.map((a) => ({
+                            id: uuidv4(),
+                            fileName: a.name,
+                            contentType: a.contentType,
+                            fileSize: Buffer.from(a.contentBytes, 'base64').length,
+                            isInline: false,
+                        })),
+                    }
                     : undefined,
             },
         });
@@ -481,6 +481,12 @@ export async function sendEmail(userId: string, request: SendEmailRequest): Prom
         return email;
     } catch (error) {
         console.error('Failed to send email:', error);
+
+        // Re-throw Microsoft quota errors with preserved status and message
+        if (error instanceof MicrosoftQuotaExceededError) {
+            throw error;
+        }
+
         throw new EmailSendError('Failed to send email');
     }
 }

@@ -48,7 +48,7 @@ app.use(
 app.use(
     cors({
         origin: config.isDevelopment
-            ? ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:8501']
+            ? ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:8501', 'http://localhost:5173']
             : process.env.ALLOWED_ORIGINS?.split(',') || [],
         credentials: true,
         methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

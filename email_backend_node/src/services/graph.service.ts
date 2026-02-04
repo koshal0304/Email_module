@@ -6,7 +6,7 @@
 
 import axios, { AxiosError, AxiosInstance } from 'axios';
 import { config } from '../config';
-import { GraphApiError } from '../utils/exceptions';
+import { GraphApiError, MicrosoftQuotaExceededError } from '../utils/exceptions';
 import {
     GraphMessage,
     GraphAttachment,
@@ -61,8 +61,34 @@ export class GraphService {
             (error: AxiosError<GraphApiErrorResponse>) => {
                 const statusCode = error.response?.status || 500;
                 const graphError = error.response?.data?.error;
+                const retryAfter = error.response?.headers['retry-after'];
 
                 if (graphError) {
+                    // Check for Microsoft quota/rate limit errors
+                    if (statusCode === 429 ||
+                        graphError.code === 'ErrorExceededMessageLimit' ||
+                        graphError.code === 'ErrorMessageSubmissionBlocked' ||
+                        graphError.code === 'ErrorSendAsDenied') {
+
+                        let userMessage = graphError.message;
+                        let quotaType = 'daily_limit';
+
+                        // Provide more helpful messages based on error code
+                        if (graphError.code === 'ErrorExceededMessageLimit') {
+                            userMessage = 'Cannot send email: Daily message limit exceeded. Please verify your Microsoft account or wait 24 hours for quota reset. Check your inbox for verification instructions.';
+                            quotaType = 'daily_message_limit';
+                        } else if (graphError.code === 'ErrorMessageSubmissionBlocked') {
+                            userMessage = 'Cannot send email: Your account has been temporarily blocked from sending. Please verify your Microsoft account.';
+                            quotaType = 'account_blocked';
+                        }
+
+                        throw new MicrosoftQuotaExceededError(
+                            userMessage,
+                            quotaType,
+                            retryAfter ? parseInt(retryAfter) : 86400 // Default to 24 hours
+                        );
+                    }
+
                     throw new GraphApiError(graphError.message, statusCode, {
                         code: graphError.code,
                         innerError: graphError.innerError,
@@ -160,8 +186,8 @@ export class GraphService {
             folderId === null
                 ? `/me/messages?${params.toString()}`
                 : folderId
-                  ? `/me/mailFolders/${folderId}/messages?${params.toString()}`
-                  : `/me/mailFolders/inbox/messages?${params.toString()}`;
+                    ? `/me/mailFolders/${folderId}/messages?${params.toString()}`
+                    : `/me/mailFolders/inbox/messages?${params.toString()}`;
 
         const response = await this.client.get<GraphODataResponse<GraphMessage>>(url);
         return response.data;

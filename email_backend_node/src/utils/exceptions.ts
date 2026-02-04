@@ -163,6 +163,17 @@ export class RateLimitError extends AppError {
     }
 }
 
+export class MicrosoftQuotaExceededError extends AppError {
+    public readonly quotaType: string;
+    public readonly retryAfter?: number;
+
+    constructor(message: string, quotaType: string = 'daily_limit', retryAfter?: number) {
+        super(message, 429, 'MICROSOFT_QUOTA_EXCEEDED', { quotaType, retryAfter });
+        this.quotaType = quotaType;
+        this.retryAfter = retryAfter;
+    }
+}
+
 // =============================================================================
 // Webhook Errors
 // =============================================================================

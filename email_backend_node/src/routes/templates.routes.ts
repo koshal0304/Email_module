@@ -59,14 +59,14 @@ router.get(
             prisma.emailTemplate.findMany({
                 where: {
                     OR: [
-                        { createdBy: userId },
-                        { createdBy: null }, // Global templates
+                        { createdById: userId },
+                        { createdById: null }, // Global templates
                     ],
                     isActive: true,
                 },
                 skip,
                 take: Number(limit),
-                orderBy: { name: 'asc' },
+                orderBy: { templateName: 'asc' },
                 include: {
                     creator: {
                         select: { email: true, firstName: true, lastName: true },
@@ -75,7 +75,7 @@ router.get(
             }),
             prisma.emailTemplate.count({
                 where: {
-                    OR: [{ createdBy: userId }, { createdBy: null }],
+                    OR: [{ createdById: userId }, { createdById: null }],
                     isActive: true,
                 },
             }),
@@ -139,8 +139,7 @@ router.post(
         const template = await prisma.emailTemplate.create({
             data: {
                 ...req.body,
-                createdBy: userId,
-                variables: req.body.variables || [],
+                createdById: userId,
             },
         });
 
@@ -165,7 +164,7 @@ router.patch(
 
         // Verify ownership
         const existing = await prisma.emailTemplate.findFirst({
-            where: { id, createdBy: userId },
+            where: { id, createdById: userId },
         });
 
         if (!existing) {
@@ -197,7 +196,7 @@ router.delete(
 
         // Verify ownership
         const existing = await prisma.emailTemplate.findFirst({
-            where: { id, createdBy: userId },
+            where: { id, createdById: userId },
         });
 
         if (!existing) {
@@ -250,16 +249,11 @@ router.post(
         };
 
         const rendered = {
-            subject: render(template.subjectTemplate) || template.subjectTemplate,
-            body: render(template.bodyTemplate),
-            bodyHtml: render(template.bodyHtmlTemplate),
+            subject: render(template.subject) || template.subject,
+            body: render(template.body),
         };
 
-        // Increment usage count
-        await prisma.emailTemplate.update({
-            where: { id },
-            data: { usageCount: { increment: 1 } },
-        });
+        // Increment usage count removed as field was deleted in new schema
 
         res.json({
             success: true,
