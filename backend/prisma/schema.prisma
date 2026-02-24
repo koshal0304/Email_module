@@ -1,0 +1,33 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Document {
+  id              String   @id @default(cuid())
+  type            String   // "BOP" | "NTR" | "COI"
+  originalName    String
+  originalPath    String
+  modifiedPath    String?  // null until first save from ONLYOFFICE
+  sizeBytes       Int
+  version         Int      @default(1)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("documents")
+}
+
+model AuditLog {
+  id              String   @id @default(cuid())
+  documentId      String
+  action          String   // "CREATED" | "EDITED" | "COMPARED"
+  userId          String?
+  metadata        Json?
+  createdAt       DateTime @default(now())
+
+  @@map("audit_logs")
+}

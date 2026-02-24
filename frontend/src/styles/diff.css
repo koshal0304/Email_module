@@ -1,0 +1,286 @@
+/* =============================================
+   Tax Document Editor - Diff Viewer Styles
+   ============================================= */
+
+/* Diff Viewer Container */
+.diff-viewer {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+}
+
+.diff-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.diff-header h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+/* View Toggle */
+.view-toggle {
+    display: flex;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.toggle-btn {
+    padding: 0.4rem 1rem;
+    border: none;
+    background: white;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: #6b7280;
+    transition: all 0.2s;
+}
+
+.toggle-btn:first-child {
+    border-right: 1px solid #d1d5db;
+}
+
+.toggle-btn.active {
+    background: #2563eb;
+    color: white;
+}
+
+.toggle-btn:hover:not(.active) {
+    background: #f3f4f6;
+}
+
+/* Diff Stats Bar */
+.diff-stats {
+    display: flex;
+    gap: 1.5rem;
+    padding: 0.75rem 1.5rem;
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.stat {
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.stat.additions {
+    color: #16a34a;
+}
+
+.stat.deletions {
+    color: #dc2626;
+}
+
+.stat.unchanged {
+    color: #6b7280;
+}
+
+/* Diff Summary */
+.diff-summary {
+    padding: 0.75rem 1.5rem;
+    background: #f0f9ff;
+    border-bottom: 1px solid #e5e7eb;
+    font-size: 0.85rem;
+    color: #1e40af;
+}
+
+/* Unified Diff View */
+.diff-unified {
+    padding: 1rem 1.5rem;
+    overflow-x: auto;
+}
+
+.html-diff {
+    font-family: 'Fira Code', 'Consolas', 'Monaco', monospace;
+    font-size: 0.85rem;
+    line-height: 1.8;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.html-diff ins {
+    background: #dcfce7;
+    color: #166534;
+    text-decoration: none;
+    padding: 1px 2px;
+    border-radius: 2px;
+}
+
+.html-diff del {
+    background: #fee2e2;
+    color: #991b1b;
+    text-decoration: line-through;
+    padding: 1px 2px;
+    border-radius: 2px;
+}
+
+/* Split Diff View */
+.diff-split {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+}
+
+.split-pane {
+    padding: 1rem;
+    overflow-x: auto;
+}
+
+.split-pane.original {
+    border-right: 2px solid #e5e7eb;
+    background: #fef2f2;
+}
+
+.split-pane.modified {
+    background: #f0fdf4;
+}
+
+.split-pane h4 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.split-pane.original h4 {
+    color: #991b1b;
+}
+
+.split-pane.modified h4 {
+    color: #166534;
+}
+
+/* Lines */
+.lines {
+    font-family: 'Fira Code', 'Consolas', monospace;
+    font-size: 0.85rem;
+}
+
+.line {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+    margin-bottom: 2px;
+}
+
+.line.deleted {
+    background: #fee2e2;
+}
+
+.line.added {
+    background: #dcfce7;
+}
+
+.line-number {
+    flex-shrink: 0;
+    width: 40px;
+    text-align: right;
+    color: #9ca3af;
+    font-size: 0.8rem;
+    user-select: none;
+}
+
+.line-content {
+    flex: 1;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* Line-by-Line Changes */
+.line-by-line {
+    padding: 1rem 1.5rem;
+    border-top: 2px solid #e5e7eb;
+}
+
+.line-by-line h4 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    color: #1f2937;
+}
+
+.line-diff {
+    margin-bottom: 0.75rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.line-header {
+    padding: 0.4rem 0.75rem;
+    background: #f3f4f6;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #6b7280;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.line-changes {
+    padding: 0.5rem 0.75rem;
+    font-family: 'Fira Code', 'Consolas', monospace;
+    font-size: 0.85rem;
+    line-height: 1.6;
+}
+
+.change.equal {
+    color: #374151;
+}
+
+.change.insert {
+    background: #bbf7d0;
+    color: #166534;
+    padding: 1px 2px;
+    border-radius: 2px;
+}
+
+.change.delete {
+    background: #fecaca;
+    color: #991b1b;
+    text-decoration: line-through;
+    padding: 1px 2px;
+    border-radius: 2px;
+}
+
+/* Diff Loading / Error */
+.diff-loading,
+.diff-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    text-align: center;
+    color: #6b7280;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.diff-error .error-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .diff-split {
+        grid-template-columns: 1fr;
+    }
+
+    .split-pane.original {
+        border-right: none;
+        border-bottom: 2px solid #e5e7eb;
+    }
+
+    .diff-stats {
+        flex-wrap: wrap;
+        gap: 0.75rem;
+    }
+}

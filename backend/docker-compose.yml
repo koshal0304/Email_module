@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: tax-editor-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: tax_docs
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - tax-editor-network
+
+  # ONLYOFFICE Document Server
+  onlyoffice-documentserver:
+    image: onlyoffice/documentserver:latest
+    container_name: onlyoffice-docserver
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - JWT_ENABLED=true
+      - JWT_SECRET=your_super_secret_jwt_key_change_in_production
+      - JWT_HEADER=Authorization
+      - JWT_IN_BODY=true
+    volumes:
+      - onlyoffice_data:/var/www/onlyoffice/Data
+      - onlyoffice_logs:/var/log/onlyoffice
+      - onlyoffice_fonts:/usr/share/fonts
+    networks:
+      - tax-editor-network
+
+volumes:
+  postgres_data:
+  onlyoffice_data:
+  onlyoffice_logs:
+  onlyoffice_fonts:
+
+networks:
+  tax-editor-network:
+    driver: bridge
